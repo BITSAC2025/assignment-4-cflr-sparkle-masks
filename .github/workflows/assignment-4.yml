@@ -63,23 +63,22 @@ jobs:
       # Prepare test environment
       - name: Prepare Test Environment
         run: |
-          cp answer-repo/Assignment-2-IR/autogen.sh $ASSIGNMENT_DIR/Assignment-2-IR
-          cp answer-repo/Assignment-2-IR/normgraph.sh $ASSIGNMENT_DIR/Assignment-2-IR
-          cd $ASSIGNMENT_DIR/Assignment-2-IR
-          chmod +x autogen.sh normgraph.sh
+          cp answer-repo/Assignment-4-CFLR/autogen.sh $ASSIGNMENT_DIR/Assignment-4-CFLR
+          cd $ASSIGNMENT_DIR/Assignment-4-CFLR
+          chmod +x autogen.sh
 
       # Run student's code and capture output
       - name: Run Student's Code
         run: |
-          cd $ASSIGNMENT_DIR/Assignment-2-IR
+          cd $ASSIGNMENT_DIR/Assignment-4-CFLR
           ./autogen.sh
 
       # Compare answers
       - name: Compare Answers
         run: |
-          ANSWER_SOURCE_DIR="answer-repo/Assignment-2-IR/answers"
-          ANSWER_STUDENT_DIR="$ASSIGNMENT_DIR/Assignment-2-IR/answers"
-          RESULTS_DIR="$ASSIGNMENT_DIR/Assignment-2-IR/test-results"
+          ANSWER_SOURCE_DIR="answer-repo/Assignment-4-CFLR/answers"
+          ANSWER_STUDENT_DIR="$ASSIGNMENT_DIR/Assignment-4-CFLR/answers"
+          RESULTS_DIR="$ASSIGNMENT_DIR/Assignment-4-CFLR/test-results"
           mkdir -p $RESULTS_DIR
           
           correct_count=0
