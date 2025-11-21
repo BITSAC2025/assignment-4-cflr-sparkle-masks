@@ -39,7 +39,7 @@ void CFLR::solve()
     //  1. implement the grammar production rules into code;
     //  2. implement the dynamic-programming CFL-reachability algorithm.
     //  You may need to add your new methods to 'CFLRGraph' and 'CFLR'.
-    // ---------- 步骤1：初始化工作表：加入所有原始终结符边 ----------
+    // ---------- 步骤1：初始化工作表：加入所有原始终结符和已有非终结符边 ----------
     // 获取图的后继邻接表
     auto& succMap = graph->getSuccessorMap();
     // 遍历每个起点节点
@@ -48,16 +48,12 @@ void CFLR::solve()
         // 遍历该起点的所有边标签
         for (const auto& labelEntry : srcEntry.second) {
             EdgeLabel label = labelEntry.first;  // 取出当前边的标签
-            // 仅筛选终结符边
-            if (label == Addr || label == Copy || label == Store || label == Load || 
-                label == AddrBar || label == LoadBar || label == StoreBar || label == CopyBar) {
-                // 遍历该标签下的所有终点
-                for (unsigned dst : labelEntry.second) {
-                    // 构造CFL可达性边对象
-                    CFLREdge edge(src, dst, label);
-                    // 将边加入工作表
-                    workList.push(edge);
-                }
+            // 遍历该标签下的所有终点，加入所有已有边，包含原始终结符与已有非终结符
+            for (unsigned dst : labelEntry.second) {
+                // 构造CFL可达性边对象
+                CFLREdge edge(src, dst, label);
+                // 将边加入工作表
+                workList.push(edge);
             }
         }
     }
@@ -90,96 +86,95 @@ void CFLR::solve()
         EdgeLabel X = current.label;  // 当前边的标签（记为X）
         unsigned vj = current.dst;    // 当前边的终点（记为vj）
 
-        // 定义单符号产生式的映射表
+        // 定义单符号产生式的映射表（from -> to）
         std::map<EdgeLabel, EdgeLabel> singleProdMap = {
-            {VF, Copy},
-            {VFBar, CopyBar}
+            {Copy, VF},
+            {CopyBar, VFBar}
         };
         // ========== 处理单符号产生式 A::=X ==========
         // 遍历映射表，统一处理所有单符号产生式
         for (const auto& entry : singleProdMap) {
-            EdgeLabel A = entry.first;    // 目标非终结符A
-            EdgeLabel targetX = entry.second;   // 当前边的标签X
-            if (X == targetX) {   // 判断当前边标签是否匹配
+            EdgeLabel from = entry.first;    // 产生式左侧（当前边应为 from）
+            EdgeLabel to = entry.second;     // 产生式右侧（要产生的非终结符）
+            if (X == from) {   // 判断当前边标签是否匹配
                 // 先检查图中是否已存在 vi→(VF)vj 这条边
-                if (!graph->hasEdge(vi, vj, A)) {
+                if (!graph->hasEdge(vi, vj, to)) {
                     // 若不存在，添加新边到图中
-                    graph->addEdge(vi, vj, A);
+                    graph->addEdge(vi, vj, to);
                     // 同时将新边加入工作表
-                    workList.push(CFLREdge(vi, vj, A));
+                    workList.push(CFLREdge(vi, vj, to));
                 }
-                break;  // 匹配到一个后跳出循环，避免重复处理
             }
         }
 
-        // 定义双符号产生式的映射表
+        // 定义双符号产生式的映射表，按 (A, B, C), C ::= A B 
         std::vector<std::tuple<EdgeLabel, EdgeLabel, EdgeLabel>> BiProdMap = {
-            {PT,    VFBar,  Addr},
-            {PTBar, Addr,   VF},
-            {VF,    VF,     VF},
-            {VF,    SV,     Load},
-            {VF,    PV,     Load},
-            {VF,    Store,  VP},
-            {VFBar, VFBar,  VFBar},
-            {VFBar, LoadBar,SV},
-            {VFBar, LoadBar,VP},
-            {VFBar, PV,     StoreBar},
-            {VA,    LV,     Load},
-            {VA,    VFBar,  VA},
-            {VA,    VA,     VF},
-            {SV,    Store,  VA},
-            {SVBar, VA,     StoreBar},
-            {PV,    PTBar,  VA},
-            {VP,    VA,     PT},
-            {LV,    LoadBar,VA}
+            {VFBar, AddrBar, PT},
+            {Addr, VF, PTBar},
+            {VF, VF, VF},
+            {SV, Load, VF},
+            {PV, Load, VF},
+            {Store, VP, VF},
+            {VFBar, VFBar, VFBar},
+            {LoadBar, SVBar, VFBar},
+            {LoadBar, VP, VFBar},
+            {PV, StoreBar, VFBar},
+            {LV, Load, VA},
+            {VFBar, VA, VA},
+            {VA, VF, VA},
+            {Store, VA, SV},
+            {VA, StoreBar, SVBar},
+            {PTBar, VA, PV},
+            {VA, PT, VP},
+            {LoadBar, VA, LV}
         };
         // ========== 处理双符号产生式 A::=X Y（左结合） ==========
-        // 遍历映射表，统一处理所有左结合双符号产生式
+        // 如果当前边 X 等于规则的 A（左符号），则查找 vj 是否存在标签为 B 的后继边
         for (const auto& entry : BiProdMap) {
-            EdgeLabel A = std::get<0>(entry);        // 目标非终结符A
-            EdgeLabel targetX = std::get<1>(entry);  // 当前边的标签X（左符号）
-            EdgeLabel Y = std::get<2>(entry);        // 后继边的标签Y（右符号）
-            if (X == targetX) {   // 判断当前边标签是否匹配
-                auto& vjSucc = graph->getSuccessorMap()[vj];  // 获取当前边终点vj的后继边集合
-                // 检查vj是否存在标签为Y的后继边
-                if (vjSucc.count(Y)){
-                    // 遍历所有vj→(Y)→vk的边，生成vi→(A)→vk的新边
-                    for (unsigned vk : vjSucc[Y]) {
-                        // 先检查图中是否已存在 vi→(A)vk 这条边
-                        if (!graph->hasEdge(vi, vk, A)) {
-                            // 若不存在，添加新边到图中
-                            graph->addEdge(vi, vk, A);
-                            // 同时将新边加入工作表
-                            workList.push(CFLREdge(vi, vk, A));
+            EdgeLabel A = std::get<0>(entry);        // 规则左符号 A
+            EdgeLabel B = std::get<1>(entry);        // 规则右符号 B
+            EdgeLabel C = std::get<2>(entry);        // 产生出的非终结符 C (C ::= A B)
+            if (X == A) {   // 判断当前边标签是否匹配为 A
+                auto succIt = graph->getSuccessorMap().find(vj);
+                if (succIt != graph->getSuccessorMap().end()) {
+                    auto lblIt = succIt->second.find(B);
+                    if (lblIt != succIt->second.end()) {
+                        for (unsigned vk : lblIt->second) {
+                            // 先检查图中是否已存在 vi→(C)vk 这条边
+                            if (!graph->hasEdge(vi, vk, C)) {
+                                // 若不存在，添加新边到图中
+                                graph->addEdge(vi, vk, C);
+                                // 同时将新边加入工作表
+                                workList.push(CFLREdge(vi, vk, C));
+                            }
                         }
                     }
                 }
-                break;  // 匹配到一个后跳出循环，避免重复处理
             }
         }
 
         // ========== 处理双符号产生式 A::=Y X（右结合） ==========
-        // 遍历映射表，统一处理所有右结合双符号产生式
+        // 如果当前边 X 等于规则的 B（右符号），则查找 vi 是否存在标签为 A 的前驱边
         for (const auto& entry : BiProdMap) {
-            EdgeLabel A = std::get<0>(entry);        // 目标非终结符A
-            EdgeLabel Y = std::get<1>(entry);        // 后继边的标签Y（左符号）
-            EdgeLabel targetX = std::get<2>(entry);  // 当前边的标签X（右符号）
-            if (X == targetX) {   // 判断当前边标签是否匹配
-                auto& viPred = graph->getPredecessorMap()[vi];  // 获取当前边起点vi的前驱边集合
-                // 检查vi是否存在标签为Y的前驱边
-                if (viPred.count(Y)){
-                    // 遍历所有vk→(Y)→vi的边，生成vk→(A)→vj的新边
-                    for (unsigned vk : viPred[Y]) {
-                        // 先检查图中是否已存在 vk→(A)vj 这条边
-                        if (!graph->hasEdge(vk, vj, A)) {
-                            // 若不存在，添加新边到图中
-                            graph->addEdge(vk, vj, A);
-                            // 将新边加入工作表
-                            workList.push(CFLREdge(vk, vj, A));
+            EdgeLabel A = std::get<0>(entry);        // 规则左符号 A
+            EdgeLabel B = std::get<1>(entry);        // 规则右符号 B
+            EdgeLabel C = std::get<2>(entry);        // 产生出的非终结符 C (C ::= A B)
+            if (X == B) {   // 判断当前边标签是否匹配为 B（当前边是右符号）
+                auto predIt = graph->getPredecessorMap().find(vi);
+                if (predIt != graph->getPredecessorMap().end()) {
+                    auto lblIt = predIt->second.find(A);
+                    if (lblIt != predIt->second.end()) {
+                        for (unsigned vk : lblIt->second) {
+                            // 先检查图中是否已存在 vk→(C)vj 这条边
+                            if (!graph->hasEdge(vk, vj, C)) {
+                                // 若不存在，添加新边到图中
+                                graph->addEdge(vk, vj, C);
+                                // 将新边加入工作表
+                                workList.push(CFLREdge(vk, vj, C));
+                            }
                         }
                     }
                 }
-                break;  // 匹配到一个后跳出循环，避免重复处理
             }
         }
     }
