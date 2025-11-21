@@ -1,1 +1,1 @@
-Total: 8, Correct: 0, Wrong: 8
+Total: 8, Correct: 8, Wrong: 0
